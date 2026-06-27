@@ -5,7 +5,7 @@
 $ErrorActionPreference = 'Stop'
 
 $ScriptPath = Join-Path $PSScriptRoot 'whatsapp-mcp.ps1'
-$PinnedHash = 'D7CA75BD73B156661AF585A277D6BFCFA328336904876F9F51FBDC729E89A492'
+$PinnedHash = 'F52C9CE809E3037884CC525320CECA37E50AF0BCEB050A4B533CE5EE69219725'
 
 if (-not (Test-Path $ScriptPath)) {
     Write-Host "whatsapp-mcp.ps1 not found next to this launcher." -ForegroundColor Red

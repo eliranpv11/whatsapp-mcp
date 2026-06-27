@@ -122,6 +122,26 @@ function Get-LatestRelease {
     return Invoke-RestMethod -Uri $api -Headers @{ 'User-Agent' = 'whatsapp-mcp-installer' }
 }
 
+# Downloads SHA256SUMS to a file and returns its lines as TEXT. We must read it
+# from a file because (Invoke-WebRequest ...).Content returns raw bytes for this
+# download under Windows PowerShell 5.1, not a string.
+function Get-ReleaseChecksums {
+    param([Parameter(Mandatory)]$Release)
+    $sumsAsset = $Release.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1
+    if (-not $sumsAsset) { throw "SHA256SUMS not found in release $($Release.tag_name)." }
+    if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
+    $sumsFile = Join-Path $InstallDir 'SHA256SUMS'
+    Invoke-WebRequest -Uri $sumsAsset.browser_download_url -OutFile $sumsFile -UseBasicParsing
+    return ,(Get-Content $sumsFile)
+}
+
+function Get-AssetSha {
+    param([Parameter(Mandatory)]$SumLines, [Parameter(Mandatory)][string]$Name)
+    $line = $SumLines | Where-Object { $_ -match [regex]::Escape($Name) } | Select-Object -First 1
+    if (-not $line) { throw "No checksum found for '$Name' in SHA256SUMS." }
+    return ($line.Trim() -split '\s+')[0]
+}
+
 # ---------------------------------------------------------------------------
 # STATE
 # ---------------------------------------------------------------------------
@@ -148,13 +168,11 @@ function Install-Connector {
     $rel = Get-LatestRelease
     $ver = $rel.tag_name
     Write-Log "Latest release: $ver"
+    $sumLines = Get-ReleaseChecksums -Release $rel
     foreach ($name in @('whatsapp-bridge.exe','mcp-server.exe')) {
         $asset = $rel.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
-        $sha   = ($rel.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1)
         if (-not $asset) { throw "Release asset '$name' not found in $ver." }
-        $sums = (Invoke-WebRequest -Uri $sha.browser_download_url -UseBasicParsing).Content
-        $expected = ($sums -split "`n" | Where-Object { $_ -match [regex]::Escape($name) } | Select-Object -First 1).Split(' ')[0]
-        Get-VerifiedFile -Url $asset.browser_download_url -OutFile (Join-Path $InstallDir $name) -ExpectedSha256 $expected
+        Get-VerifiedFile -Url $asset.browser_download_url -OutFile (Join-Path $InstallDir $name) -ExpectedSha256 (Get-AssetSha $sumLines $name)
     }
 
     Write-Step "Registering connector in Claude Desktop config"
@@ -203,12 +221,11 @@ function Update-Connector {
     $rel = Get-LatestRelease
     $ver = $rel.tag_name
     if ($ver -eq (Get-StateVersion)) { Write-Ok "Already on the latest version ($ver)."; return }
+    $sumLines = Get-ReleaseChecksums -Release $rel
     foreach ($name in @('whatsapp-bridge.exe','mcp-server.exe')) {
         $asset = $rel.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
-        $sha   = ($rel.assets | Where-Object { $_.name -eq 'SHA256SUMS' } | Select-Object -First 1)
-        $sums  = (Invoke-WebRequest -Uri $sha.browser_download_url -UseBasicParsing).Content
-        $expected = ($sums -split "`n" | Where-Object { $_ -match [regex]::Escape($name) } | Select-Object -First 1).Split(' ')[0]
-        Get-VerifiedFile -Url $asset.browser_download_url -OutFile (Join-Path $InstallDir $name) -ExpectedSha256 $expected
+        if (-not $asset) { throw "Release asset '$name' not found in $ver." }
+        Get-VerifiedFile -Url $asset.browser_download_url -OutFile (Join-Path $InstallDir $name) -ExpectedSha256 (Get-AssetSha $sumLines $name)
     }
     Save-State $ver
     Write-Ok "Updated to $ver. Restart the bridge to apply."
