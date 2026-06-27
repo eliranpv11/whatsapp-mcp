@@ -1,0 +1,14 @@
+# Build artifacts (CI rebuilds these on each release)
+*.exe
+dist/
+
+# Go
+bridge-src/whatsapp-bridge.exe
+
+# Python / PyInstaller
+__pycache__/
+*.pyc
+.venv/
+mcp-server-src/.venv/
+build/
+*.spec
