@@ -69,6 +69,11 @@ function Backup-Config([string]$Path) {
 
 function Write-JsonFile([string]$Path, $Object) {
     $json = $Object | ConvertTo-Json -Depth 100
+    # Clear a possible read-only attribute first, otherwise WriteAllText throws
+    # (the config can be left read-only by a prior protective step).
+    if (Test-Path $Path) {
+        try { Set-ItemProperty -LiteralPath $Path -Name IsReadOnly -Value $false -ErrorAction SilentlyContinue } catch {}
+    }
     [System.IO.File]::WriteAllText($Path, $json, (New-Object System.Text.UTF8Encoding($false)))
 }
 
@@ -182,15 +187,21 @@ function Install-Connector {
     Write-Ok "Connector registered (points to $McpExe)."
 
     Save-State $ver
-    Write-Step "Starting the bridge -scan the QR with your phone"
-    Start-Process -FilePath $BridgeExe -WorkingDirectory $InstallDir
-    Write-Ok "Bridge started. After you scan the QR, reopen Claude Desktop."
 
     if (-not $Auto) {
         $a = Read-Host "Enable automatic updates? (Y/n)"
         if ($a -ne 'n' -and $a -ne 'N') { Install-AutoUpdate }
     }
-    Write-Ok "Install complete."
+
+    Write-Ok "Install complete. Reopen Claude Desktop afterwards to load the connector."
+    Write-Step "Starting the bridge in THIS window - scan the QR with your phone"
+    Write-Warn "Keep this window open: the bridge must stay running for WhatsApp to work."
+    Write-Warn "To stop it (and return to the menu), press Ctrl+C."
+    # Run the bridge in the foreground of this same window so the QR appears here
+    # and no extra window is opened. cwd must be InstallDir (the store/ path is
+    # relative). Ctrl+C returns control to the menu loop.
+    Push-Location $InstallDir
+    try { & $BridgeExe } finally { Pop-Location }
 }
 
 function Uninstall-Connector {

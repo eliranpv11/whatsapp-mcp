@@ -20,5 +20,8 @@ $content = Invoke-RestMethod -Uri $Url
 if ($content.Length -gt 0 -and $content[0] -eq [char]0xFEFF) { $content = $content.Substring(1) }
 [System.IO.File]::WriteAllText($Tmp, $content, (New-Object System.Text.UTF8Encoding($true)))
 
-Write-Host "Launching the manager..." -ForegroundColor Green
-Start-Process powershell.exe -ArgumentList '-NoProfile','-NoExit','-ExecutionPolicy','Bypass','-File',"`"$Tmp`""
+Write-Host "Launching the manager (in this window)..." -ForegroundColor Green
+# Run the manager INLINE in this same window instead of spawning a new one, so
+# the whole flow (menu -> install -> bridge/QR) lives in a single window.
+try { Set-ExecutionPolicy -Scope Process Bypass -Force -ErrorAction SilentlyContinue } catch {}
+& $Tmp

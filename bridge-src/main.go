@@ -60,11 +60,15 @@ func NewMessageStore() (*MessageStore, error) {
 		return nil, fmt.Errorf("failed to create store directory: %v", err)
 	}
 
-	// Open SQLite database for messages
-	db, err := sql.Open("sqlite3", "file:store/messages.db?_pragma=foreign_keys(1)")
+	// Open SQLite database for messages.
+	// busy_timeout + WAL + a single connection avoid "database is locked"
+	// (SQLITE_BUSY) under the pure-Go modernc driver, which otherwise opens
+	// several connections that race for SQLite's single writer slot.
+	db, err := sql.Open("sqlite3", "file:store/messages.db?_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open message database: %v", err)
 	}
+	db.SetMaxOpenConns(1)
 
 	// Create tables if they don't exist
 	_, err = db.Exec(`
@@ -823,9 +827,19 @@ func main() {
 		return
 	}
 
-	container, err := sqlstore.New(context.Background(), "sqlite3", "file:store/whatsapp.db?_pragma=foreign_keys(1)", dbLog)
+	// Open the whatsmeow store ourselves so we can force a single connection
+	// and a busy_timeout. The pure-Go modernc driver otherwise hands whatsmeow
+	// several connections that race for SQLite's single writer during history
+	// sync, producing "database is locked (5) (SQLITE_BUSY)" and lost messages.
+	waDB, err := sql.Open("sqlite3", "file:store/whatsapp.db?_pragma=foreign_keys(1)&_pragma=busy_timeout(10000)&_pragma=journal_mode(WAL)")
 	if err != nil {
-		logger.Errorf("Failed to connect to database: %v", err)
+		logger.Errorf("Failed to open database: %v", err)
+		return
+	}
+	waDB.SetMaxOpenConns(1)
+	container := sqlstore.NewWithDB(waDB, "sqlite3", dbLog)
+	if err := container.Upgrade(context.Background()); err != nil {
+		logger.Errorf("Failed to upgrade database: %v", err)
 		return
 	}
 
