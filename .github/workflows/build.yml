@@ -1,0 +1,63 @@
+name: build-release
+
+# Builds the two Windows binaries (pure-Go bridge + PyInstaller MCP server),
+# computes SHA256SUMS, and attaches them to the GitHub Release on each v* tag.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build bridge (pure-Go, static, CGO_ENABLED=0)
+        working-directory: bridge-src
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          New-Item -ItemType Directory -Force -Path ../dist | Out-Null
+          go build -trimpath -ldflags "-s -w" -o ../dist/whatsapp-bridge.exe .
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build MCP server (PyInstaller one-file)
+        working-directory: mcp-server-src
+        run: |
+          python -m pip install --upgrade pip pyinstaller
+          python -m pip install .
+          pyinstaller --onefile --name mcp-server --collect-all mcp main.py
+          Copy-Item dist/mcp-server.exe ../dist/mcp-server.exe
+
+      - name: Compute SHA256SUMS
+        working-directory: dist
+        run: |
+          $sums = ''
+          foreach ($f in 'whatsapp-bridge.exe','mcp-server.exe') {
+            $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+            $sums += "$h  $f`n"
+          }
+          [System.IO.File]::WriteAllText("$PWD/SHA256SUMS", $sums)
+          Get-Content SHA256SUMS
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/whatsapp-bridge.exe
+            dist/mcp-server.exe
+            dist/SHA256SUMS
