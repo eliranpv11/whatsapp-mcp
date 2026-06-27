@@ -3,11 +3,22 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional, List, Tuple
 import os.path
+import sys
 import requests
 import json
 import audio
 
-MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db')
+# Resolve the message store. In the packaged installer build (PyInstaller
+# one-file => sys.frozen), the bridge writes store/messages.db next to the .exe,
+# so anchor on the executable's directory. From source, keep the original dev
+# layout (../whatsapp-bridge/store/messages.db). An explicit WHATSAPP_DB_PATH
+# env var always wins.
+if os.environ.get('WHATSAPP_DB_PATH'):
+    MESSAGES_DB_PATH = os.environ['WHATSAPP_DB_PATH']
+elif getattr(sys, 'frozen', False):
+    MESSAGES_DB_PATH = os.path.join(os.path.dirname(sys.executable), 'store', 'messages.db')
+else:
+    MESSAGES_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'whatsapp-bridge', 'store', 'messages.db')
 # Use 127.0.0.1 (not "localhost") to match the bridge, which now binds to the
 # IPv4 loopback only. Avoids any IPv4/IPv6 resolution mismatch on Windows.
 WHATSAPP_API_BASE_URL = "http://127.0.0.1:8080/api"

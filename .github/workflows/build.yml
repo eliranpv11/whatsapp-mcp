@@ -39,7 +39,12 @@ jobs:
         working-directory: mcp-server-src
         run: |
           python -m pip install --upgrade pip pyinstaller
-          python -m pip install .
+          # Install deps explicitly and PIN mcp to the tested 1.6.0 (matches
+          # uv.lock). `pip install .` did not reliably install mcp, so
+          # --collect-all mcp bundled nothing -> runtime "No module named 'mcp'".
+          # Also, mcp>=1.28 enforces strict dict tool output that the
+          # dataclass-returning tools fail; 1.6.0 is the tested baseline.
+          python -m pip install "mcp[cli]==1.6.0" "httpx>=0.28.1" "requests>=2.32.3"
           pyinstaller --onefile --name mcp-server --collect-all mcp main.py
           Copy-Item dist/mcp-server.exe ../dist/mcp-server.exe
 
